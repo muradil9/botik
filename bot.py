@@ -4,7 +4,7 @@ import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from dotenv import load_dotenv
-from config import ADMIN_USER_ID, ADMIN_USERNAME, PENDING_ORDERS
+from config import ADMIN_USER_IDS, ADMIN_USERNAME, PENDING_ORDERS
 
 # Configure logging
 logging.basicConfig(
@@ -48,10 +48,15 @@ PRODUCTS = {
 user_orders = {}
 user_states = {}
 
+def is_admin(user_id: int) -> bool:
+    """Check if user is admin"""
+    logger.info(f"Checking if user {user_id} is admin. Admin IDs: {ADMIN_USER_IDS}")
+    return user_id in ADMIN_USER_IDS
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
-    logger.info("User started the bot")
     user_id = update.message.from_user.id
+    logger.info(f"User {user_id} started the bot")
     user_states[user_id] = 'start'
     
     keyboard = [
@@ -110,7 +115,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Адрес: {order['address']}\n"
             f"Телефон: {order['phone']}\n\n"
             f"Для оплаты переведите {order['price_usdt']} USDT на адрес:\n"
-            f"USDT (TRC20): TYJgFhJQqXZJXJXJXJXJXJXJXJXJX\n\n"
+            f"USDT (TRC20): TSU1zs9Z4nxudfkoGP39CcrsRyey8bp5fM\n\n"
             f"После оплаты дождитесь проверки администратора."
         )
         
@@ -121,18 +126,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         admin_reply_markup = InlineKeyboardMarkup(admin_keyboard)
         
-        await context.bot.send_message(
-            chat_id=ADMIN_USER_ID,
-            text=f"Новый заказ!\n"
-                 f"ID заказа: {order_id}\n"
-                 f"Пользователь: @{update.message.from_user.username}\n"
-                 f"Товар: {order['product_name']}\n"
-                 f"Цена: {order['price_kzt']}₸ / {order['price_usdt']} USDT\n"
-                 f"Адрес: {order['address']}\n"
-                 f"Телефон: {order['phone']}\n\n"
-                 f"Ожидает проверки оплаты.",
-            reply_markup=admin_reply_markup
-        )
+        # Send notification to all admins
+        for admin_id in ADMIN_USER_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=f"Новый заказ!\n"
+                         f"ID заказа: {order_id}\n"
+                         f"Пользователь: @{update.message.from_user.username}\n"
+                         f"Товар: {order['product_name']}\n"
+                         f"Цена: {order['price_kzt']}₸ / {order['price_usdt']} USDT\n"
+                         f"Адрес: {order['address']}\n"
+                         f"Телефон: {order['phone']}\n\n"
+                         f"Ожидает проверки оплаты.",
+                    reply_markup=admin_reply_markup
+                )
+                logger.info(f"Sent order notification to admin {admin_id}")
+            except Exception as e:
+                logger.error(f"Failed to send notification to admin {admin_id}: {e}")
         
         user_states[user_id] = 'start'
     else:
@@ -199,7 +210,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Произошла ошибка при завершении заказа")
     elif data.startswith('check_'):
         # Admin checking payment
-        if user_id == ADMIN_USER_ID:
+        if is_admin(user_id):
             try:
                 order_id = data[6:]  # Remove 'check_' prefix
                 logger.info(f"Admin {user_id} checking order {order_id}")
@@ -227,9 +238,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.error(f"Error processing admin check: {e}")
                 await query.answer("Произошла ошибка при обработке заказа")
+        else:
+            logger.warning(f"Non-admin user {user_id} tried to check payment")
+            await query.answer("У вас нет прав администратора")
     elif data.startswith('reject_'):
         # Admin rejecting order
-        if user_id == ADMIN_USER_ID:
+        if is_admin(user_id):
             try:
                 order_id = data[7:]  # Remove 'reject_' prefix
                 logger.info(f"Admin {user_id} rejecting order {order_id}")
@@ -250,6 +264,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.error(f"Error processing admin reject: {e}")
                 await query.answer("Произошла ошибка при обработке заказа")
+        else:
+            logger.warning(f"Non-admin user {user_id} tried to reject order")
+            await query.answer("У вас нет прав администратора")
     else:
         # Handle flavor selection
         for brand, brand_info in PRODUCTS.items():

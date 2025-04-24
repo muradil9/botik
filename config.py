@@ -1,6 +1,6 @@
 # Admin configuration
-ADMIN_USER_ID = 6620133292  # Замените на ваш Telegram ID
-ADMIN_USERNAME = "your_user"  # Замените на ваш username
+ADMIN_USER_IDS = [7711216184]  # Список ID администраторов
+ADMIN_USERNAME = "your_user"  # Username администратора
 
 # Payment confirmation settings
 PENDING_ORDERS = {}  # Словарь для хранения ожидающих подтверждения заказов 
